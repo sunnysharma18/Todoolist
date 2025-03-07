@@ -6,37 +6,56 @@
     <title>To-Do List</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body class="bg-light">
 
-<div class="container mt-4">
-    <h2 class="text-center mb-4">To-Do List</h2>
+    <div class="container mt-4">
+        <div class="d-flex align-items-center mb-3">
+            <input type="checkbox" id="showAllTasks" class="me-2">
+            <label for="showAllTasks" class="fw-bold">Show All Tasks</label>
+        </div>
 
-    <meta name="csrf-token" content="{{ csrf_token() }}">
+        <div class="input-group mb-3">
+            <input type="text" id="taskInput" class="form-control" placeholder="Project # To Do">
+            <button class="btn btn-success" id="addTaskButton">Add</button>
+        </div>
 
-    <div class="input-group mb-3">
-        <input type="text" id="taskInput" class="form-control" placeholder="Enter Task">
-        <button class="btn btn-primary me-3" id="addTaskButton">Add Task</button>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Task</th>
+                    <th>Created At</th>
+                    <th>User</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="taskList">
+                @foreach($tasks as $task)
+                <tr class="task-item {{ $task->completed ? 'd-none' : '' }}" data-id="{{ $task->id }}">
+                    <td>
+                        <input type="checkbox" class="task-checkbox" {{ $task->completed ? 'checked' : '' }}>
+                    </td>
+                    <td class="task-text {{ $task->completed ? 'text-decoration-line-through text-muted' : '' }}">
+                        {{ $task->task }}
+                    </td>
+                    <td>{{ $task->created_at->diffForHumans() }}</td>
+                    <td>
+                        @php
+                            $profileImage = optional($task->user)->profile_image ?? 'default.png';
+                        @endphp
+                       <img src="{{ asset('storage/upload/download.jpeg') }}" class="rounded-circle" width="30" onerror="this.src='{{ asset('storage/default.png') }}'">
+
+                    </td>
+                    <td>
+                        <button class="btn btn-danger btn-sm delete-task">Delete</button>
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
-
-    <button class="btn btn-secondary mb-3" id="showAllTasks">Show All Tasks</button>
-
-    <ul id="taskList" class="list-group">
-        @foreach($tasks as $task)
-        <li class="list-group-item d-flex justify-content-between align-items-center task-item {{ $task->completed ? 'd-none' : '' }}" data-id="{{ $task->id }}">
-            <div>
-                <input type="checkbox" class="task-checkbox" {{ $task->completed ? 'checked' : '' }}>
-                <span class="task-text {{ $task->completed ? 'text-decoration-line-through text-muted' : '' }}">{{ $task->task }}</span>
-            </div>
-            <button class="btn btn-danger btn-sm delete-task">Delete</button>
-        </li>
-        @endforeach
-    </ul>
-
-</div>
-
-<!-- Load jQuery first -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
 <script>
 $(document).ready(function () {
@@ -45,63 +64,58 @@ $(document).ready(function () {
     }
 
     function addTask() {
-    let task = $('#taskInput').val().trim();
-    if (!task) {
-        alert('Task cannot be empty!');
-        return;
+        let task = $('#taskInput').val().trim();
+        if (!task) {
+            alert('Task cannot be empty!');
+            return;
+        }
+
+        $.ajax({
+            url: '/tasks',
+            type: 'POST',
+            data: {
+                task: task,
+                _token: getCsrfToken()
+            },
+            success: function (response) {
+                if (response.success) {
+                    let profileImage = response.task.user?.profile_image ?? 'default.png';
+                    let taskRow = `
+                        <tr class="task-item" data-id="${response.task.id}">
+                            <td><input type="checkbox" class="task-checkbox"></td>
+                            <td class="task-text">${response.task.task}</td>
+                            <td>${response.task.created_at}</td>
+                            <td>
+                               <img src="{{ asset('storage/upload/download.jpeg') }}" class="rounded-circle" width="30" onerror="this.src='{{ asset('storage/default.png') }}'">
+
+                            </td>
+                            <td><button class="btn btn-danger btn-sm delete-task">Delete</button></td>
+                        </tr>`;
+                    $('#taskList').append(taskRow);
+                    $('#taskInput').val('');
+                } else {
+                    alert('Task already exists!');
+                }
+            },
+            error: function (xhr) {
+                console.error('AJAX Error:', xhr.responseText);
+                alert('Error: ' + xhr.responseText);
+            }
+        });
     }
 
-    $.ajax({
-        url: '/tasks',
-        type: 'POST',
-        data: { task: task },
-        headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-        success: function (response) {
-            console.log('Success:', response);
-            if (response.success) {
-                $('#taskList').append(`
-                    <li class="list-group-item d-flex justify-content-between align-items-center task-item" data-id="${response.task.id}">
-                        <div>
-                            <input type="checkbox" class="task-checkbox">
-                            <span class="task-text">${response.task.task}</span>
-                        </div>
-                        <button class="btn btn-danger btn-sm delete-task">Delete</button>
-                    </li>
-                `);
-                $('#taskInput').val('');
-            } else {
-                alert('Task already exists!');
-            }
-        },
-        error: function (xhr, status, error) {
-            console.error('AJAX Error:', xhr.responseText);
-            alert('Error: ' + xhr.responseText);
-        }
-    });
-}
-
-
-function toggleTask(id, checkbox) {
-    $.ajax({
-        url: `/tasks/${id}`,
-        type: 'PATCH',
-        headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-        success: function (response) {
-            if (response.success) {
-                let taskItem = $(checkbox).closest('.task-item');
-                let taskText = taskItem.find('.task-text');
-
-                taskText.toggleClass('text-decoration-line-through text-muted');
-
-                if ($(checkbox).is(':checked')) {
-                    taskItem.addClass('d-none'); // Hide completed tasks
-                } else {
-                    taskItem.removeClass('d-none'); // Show uncompleted tasks
+    function toggleTask(id, checkbox) {
+        $.ajax({
+            url: `/tasks/${id}`,
+            type: 'PATCH',
+            headers: { 'X-CSRF-TOKEN': getCsrfToken() },
+            success: function (response) {
+                if (response.success) {
+                    $(checkbox).closest('tr').toggleClass('d-none');
                 }
             }
-        }
-    });
-}
+        });
+    }
 
     function deleteTask(id, taskItem) {
         if (!confirm('Are you sure you want to delete this task?')) return;
@@ -118,20 +132,14 @@ function toggleTask(id, checkbox) {
         });
     }
 
-    $('#addTaskButton').click(function () {
-        addTask();
-    });
+    $('#addTaskButton').click(addTask);
 
     $('#taskList').on('click', '.task-checkbox', function () {
-        let taskItem = $(this).closest('li');
-        let taskId = taskItem.attr('data-id');
-        toggleTask(taskId, this);
+        toggleTask($(this).closest('tr').attr('data-id'), this);
     });
 
     $('#taskList').on('click', '.delete-task', function () {
-        let taskItem = $(this).closest('li');
-        let taskId = taskItem.attr('data-id');
-        deleteTask(taskId, taskItem);
+        deleteTask($(this).closest('tr').attr('data-id'), $(this).closest('tr'));
     });
 
     $('#taskInput').keypress(function (e) {
@@ -140,12 +148,11 @@ function toggleTask(id, checkbox) {
         }
     });
 
-    $('#showAllTasks').click(function () {
-    $('.task-item').removeClass('d-none'); // Show all tasks
-});
-
+    $('#showAllTasks').change(function () {
+        $('.task-item').toggleClass('d-none', !$(this).is(':checked'));
+    });
 });
 </script>
+
 </body>
 </html>
-
